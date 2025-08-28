@@ -1,0 +1,14 @@
+destinations:
+  main:
+    bucket: testbucket
+    prefix: postgres
+    endpoint: http://minio:9000
+    accessKey: minio
+    secretKey: minio123
+    region: us-east-1
+
+
+backups:
+  - url: postgres://postgres:postgres@postgres:5432/app
+    destination: main
+    schedule: "*/2 * * * *"   # every 2 minutes for testing
