@@ -8,7 +8,7 @@ A lightweight PostgreSQL backup scheduler that **automagically** creates databas
 - **S3-Compatible Storage** – works with AWS S3, MinIO, Cloudflare R2, and others
 - **Custom Dump Format** – uses `pg_dump -Fc` for compressed, efficient backups and restores
 - **Retention Policy** – optional `maxHistory` to keep only the latest *N* backups per database
-- **Environment Variable Substitution** – `${VAR}` placeholders expand from environment variables
+- **Environment Variable Expansion** – `${VAR}`, `$VAR`, `${VAR:-default}`, `${VAR-default}` placeholders expand everywhere in YAML
 - **Docker Ready** – run as a container with a simple YAML config
 - **Multiple Databases** – back up many databases to different destinations with one config
 
@@ -21,33 +21,35 @@ A lightweight PostgreSQL backup scheduler that **automagically** creates databas
 ```yaml
 destinations:
   s3:
-    bucket: my-backup-bucket
-    prefix: postgres-backups
-    endpoint: https://s3.amazonaws.com
+    bucket: ${S3_BUCKET}
+    prefix: ${BACKUP_PREFIX:-postgres-backups}
+    endpoint: ${S3_ENDPOINT}
     accessKey: ${AWS_ACCESS_KEY_ID}
     secretKey: ${AWS_SECRET_ACCESS_KEY}
-    region: us-east-1
+    region: ${AWS_DEFAULT_REGION:-us-east-1}
 
 backups:
-  - url: postgres://postgres:password@localhost:5432/mydb
+  - url: ${PG_URL}
     destination: s3
     schedule: "0 2 * * *"   # Daily at 2 AM
-    maxHistory: 7           # Keep last 7 backups
+    maxHistory: ${PG_KEEP:-7}
   ```
 
 ### 2. Docker Compose
 
 ```yaml
 services:
-  pg-backup:
-    image: ghcr.io/hareland/pg-backup:latest
-    restart: unless-stopped
-    volumes:
-      - ./config.yaml:/config.yaml:ro
-    environment:
-      AWS_ACCESS_KEY_ID: your-access-key
-      AWS_SECRET_ACCESS_KEY: your-secret-key
-      TZ: Europe/Copenhagen
+    pg-backup:
+        image: ghcr.io/hareland/pg-backup:latest
+        restart: unless-stopped
+        volumes:
+          - ./config.yaml:/config.yaml:ro
+        environment:
+          S3_BUCKET: my-backup-bucket
+          PG_URL: postgres://postgres:password@db:5432/mydb
+          AWS_ACCESS_KEY_ID: your-access-key
+          AWS_SECRET_ACCESS_KEY: your-secret-key
+          TZ: Europe/Copenhagen
 ```
 
 ```bash
@@ -58,13 +60,15 @@ docker-compose up -d
 
 ```bash
 docker run -d \
-  --name pg-backup \
-  -v $(pwd)/config.yaml:/config.yaml:ro \
-  -e AWS_ACCESS_KEY_ID=your-access-key \
-  -e AWS_SECRET_ACCESS_KEY=your-secret-key \
-  -e TZ=Europe/Copenhagen \
-  --restart unless-stopped \
-  ghcr.io/hareland/pg-backup:latest
+    --name pg-backup \
+    -v $(pwd)/config.yaml:/config.yaml:ro \
+    -e S3_BUCKET=my-backup-bucket \
+    -e PG_URL=postgres://postgres:password@db:5432/mydb \
+    -e AWS_ACCESS_KEY_ID=your-access-key \
+    -e AWS_SECRET_ACCESS_KEY=your-secret-key \
+    -e TZ=Europe/Copenhagen \
+    --restart unless-stopped \
+    ghcr.io/hareland/pg-backup:latest
 ```
 
 ---
@@ -101,56 +105,56 @@ backups:
 
 ```yaml
 destinations:
-  aws:
-    bucket: my-backup-bucket
-    prefix: database-backups
-    region: us-east-1   
-    accessKey: ${AWS_ACCESS_KEY_ID}
-    secretKey: ${AWS_SECRET_ACCESS_KEY}
+    aws:
+        bucket: ${AWS_BUCKET}
+        prefix: database-backups
+        region: us-east-1
+        accessKey: ${AWS_ACCESS_KEY_ID}
+        secretKey: ${AWS_SECRET_ACCESS_KEY}
 
 backups:
-  - url: postgres://user:pass@db.example.com:5432/production
-    destination: aws
-    schedule: "0 3 * * *"  # Daily at 3 AM
-    maxHistory: 14
+- url: postgres://user:pass@db.example.com:5432/production
+  destination: aws
+  schedule: "0 3 * * *"  # Daily at 3 AM
+  maxHistory: 14
   ```
 
 ### MinIO
 
 ```yaml
 destinations:
-  minio:
-    bucket: backups
-    prefix: postgres
-    endpoint: http://minio:9000
-    accessKey: minio
-    secretKey: minio123
-    region: us-east-1
+    minio:
+        bucket: backups
+        prefix: postgres
+        endpoint: http://minio:9000
+        accessKey: minio
+        secretKey: minio123
+        region: us-east-1
 
 backups:
-  - url: postgres://postgres:postgres@postgres:5432/app
-    destination: minio
-    schedule: "0 */6 * * *"  # Every 6 hours
-    maxHistory: 10
+- url: postgres://postgres:postgres@postgres:5432/app
+  destination: minio
+  schedule: "0 */6 * * *"  # Every 6 hours
+  maxHistory: 10
   ```
 
 ### Cloudflare R2
 
 ```yaml
 destinations:
-  r2:
-    bucket: my-r2-bucket
-    prefix: db-backups
-    endpoint: https://your-account-id.r2.cloudflarestorage.com
-    accessKey: ${R2_ACCESS_KEY}
-    secretKey: ${R2_SECRET_KEY}
-    region: auto
+    r2:
+      bucket: my-r2-bucket
+      prefix: db-backups
+      endpoint: https://your-account-id.r2.cloudflarestorage.com
+      accessKey: ${R2_ACCESS_KEY}
+      secretKey: ${R2_SECRET_KEY}
+      region: auto
 
 backups:
-  - url: postgres://postgres:password@db:5432/myapp
-    destination: r2
-    schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
-    maxHistory: 7
+- url: postgres://postgres:password@db:5432/myapp
+  destination: r2
+  schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+  maxHistory: 7
   ```
 
 ---
@@ -169,14 +173,62 @@ backups:
 - `AWS_DEFAULT_REGION`
 - `AWS_ENDPOINT_URL`
 
-### Substitution Example
+### Substitution Rules
+
+- `${VAR}` → expand to env var (empty if unset)
+- `$VAR` → shorthand expansion
+- `${VAR:-default}` → use default if unset **or empty**
+- `${VAR-default}` → use default if unset
+
+---
+
+## 🔍 Advanced Substitution Examples
+
+#### 1. Simple expansion
+
+```yaml
+url: postgres://user:${PG_PASS}@db:5432/app
+```
+
+If `PG_PASS=secret123`, it becomes:
+
+```
+postgres://user:secret123@db:5432/app
+```
+
+---
+
+#### 2. Default if unset
+
+```yaml
+maxHistory: ${PG_KEEP-5}
+```
+
+- If `PG_KEEP` is **unset** → becomes `5`
+- If `PG_KEEP` is set to empty → stays empty
+
+---
+
+#### 3. Default if unset **or empty**
+
+```yaml
+maxHistory: ${PG_KEEP:-5}
+```
+
+- If `PG_KEEP` is **unset** → becomes `5`
+- If `PG_KEEP` is set to empty → becomes `5`
+- If `PG_KEEP=10` → becomes `10`
+
+---
+
+#### 4. Mixing defaults in destinations
 
 ```yaml
 destinations:
-  prod:
-    bucket: ${BACKUP_BUCKET}
-    accessKey: ${AWS_ACCESS_KEY_ID}
-    secretKey: ${AWS_SECRET_ACCESS_KEY}
+    s3:
+        bucket: ${S3_BUCKET:-default-bucket}
+        region: ${AWS_DEFAULT_REGION:-us-east-1}
+        prefix: ${BACKUP_PREFIX-backups}
 ```
 
 ---
@@ -214,9 +266,7 @@ s3://my-backups/postgres/myapp/pgdump-20231225T030000Z.dump
 
 ## 🔄 Restore
 
-You can restore any backup using `aws s3 cp` (or your S3-compatible CLI) together with `pg_restore`.
-
-### Steps
+You can restore any backup using `aws s3 cp` (or compatible CLI) together with `pg_restore`.
 
 1. Copy the backup file locally:
 
@@ -231,7 +281,7 @@ createdb -h localhost -U postgres mydb_restored
 pg_restore -h localhost -U postgres -d mydb_restored ./backup.dump
 ```
 
-3. Or overwrite an existing database (careful: destructive):
+3. Or overwrite an existing database (⚠️ destructive):
 
 ```bash
 pg_restore -h localhost -U postgres -d mydb --clean --if-exists ./backup.dump
