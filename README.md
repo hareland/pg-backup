@@ -20,34 +20,34 @@ A lightweight PostgreSQL backup scheduler that **automagically** creates databas
 
 ```yaml
 destinations:
-s3:
-bucket: my-backup-bucket
-prefix: postgres-backups
-endpoint: https://s3.amazonaws.com
-accessKey: ${AWS_ACCESS_KEY_ID}
-secretKey: ${AWS_SECRET_ACCESS_KEY}
-region: us-east-1
+  s3:
+    bucket: my-backup-bucket
+    prefix: postgres-backups
+    endpoint: https://s3.amazonaws.com
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}
+    region: us-east-1
 
 backups:
-- url: postgres://postgres:password@localhost:5432/mydb
-  destination: s3
-  schedule: "0 2 * * *"   # Daily at 2 AM
-  maxHistory: 7           # Keep last 7 backups
+  - url: postgres://postgres:password@localhost:5432/mydb
+    destination: s3
+    schedule: "0 2 * * *"   # Daily at 2 AM
+    maxHistory: 7           # Keep last 7 backups
   ```
 
 ### 2. Docker Compose
 
 ```yaml
 services:
-pg-backup:
-image: ghcr.io/hareland/pg-backup:latest
-volumes:
-- ./config.yaml:/config.yaml:ro
-environment:
-AWS_ACCESS_KEY_ID: your-access-key
-AWS_SECRET_ACCESS_KEY: your-secret-key
-TZ: Europe/Copenhagen
-restart: unless-stopped
+  pg-backup:
+    image: ghcr.io/hareland/pg-backup:latest
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+    environment:
+      AWS_ACCESS_KEY_ID: your-access-key
+      AWS_SECRET_ACCESS_KEY: your-secret-key
+      TZ: Europe/Copenhagen
 ```
 
 ```bash
@@ -58,13 +58,13 @@ docker-compose up -d
 
 ```bash
 docker run -d \
---name pg-backup \
--v $(pwd)/config.yaml:/config.yaml:ro \
--e AWS_ACCESS_KEY_ID=your-access-key \
--e AWS_SECRET_ACCESS_KEY=your-secret-key \
--e TZ=Europe/Copenhagen \
---restart unless-stopped \
-ghcr.io/hareland/pg-backup:latest
+  --name pg-backup \
+  -v $(pwd)/config.yaml:/config.yaml:ro \
+  -e AWS_ACCESS_KEY_ID=your-access-key \
+  -e AWS_SECRET_ACCESS_KEY=your-secret-key \
+  -e TZ=Europe/Copenhagen \
+  --restart unless-stopped \
+  ghcr.io/hareland/pg-backup:latest
 ```
 
 ---
@@ -78,19 +78,19 @@ ghcr.io/hareland/pg-backup:latest
 
 ```yaml
 destinations:
-name:
-bucket: string
-prefix: string        # optional
-endpoint: string      # optional for AWS
-accessKey: string
-secretKey: string
-region: string
+  name:
+    bucket: string
+    prefix: string        # optional
+    endpoint: string      # optional for AWS
+    accessKey: string
+    secretKey: string
+    region: string
 
 backups:
-- url: string
-  destination: string   # reference to a destination
-  schedule: string      # cron expression
-  maxHistory: int       # keep latest N backups (optional)
+  - url: string
+    destination: string   # reference to a destination
+    schedule: string      # cron expression
+    maxHistory: int       # keep latest N backups (optional)
   ```
 
 ---
@@ -101,56 +101,56 @@ backups:
 
 ```yaml
 destinations:
-aws:
-bucket: my-backup-bucket
-prefix: database-backups
-region: us-east-1
-accessKey: ${AWS_ACCESS_KEY_ID}
-secretKey: ${AWS_SECRET_ACCESS_KEY}
+  aws:
+    bucket: my-backup-bucket
+    prefix: database-backups
+    region: us-east-1   
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}
 
 backups:
-- url: postgres://user:pass@db.example.com:5432/production
-  destination: aws
-  schedule: "0 3 * * *"  # Daily at 3 AM
-  maxHistory: 14
+  - url: postgres://user:pass@db.example.com:5432/production
+    destination: aws
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    maxHistory: 14
   ```
 
 ### MinIO
 
 ```yaml
 destinations:
-minio:
-bucket: backups
-prefix: postgres
-endpoint: http://minio:9000
-accessKey: minio
-secretKey: minio123
-region: us-east-1
+  minio:
+    bucket: backups
+    prefix: postgres
+    endpoint: http://minio:9000
+    accessKey: minio
+    secretKey: minio123
+    region: us-east-1
 
 backups:
-- url: postgres://postgres:postgres@postgres:5432/app
-  destination: minio
-  schedule: "0 */6 * * *"  # Every 6 hours
-  maxHistory: 10
+  - url: postgres://postgres:postgres@postgres:5432/app
+    destination: minio
+    schedule: "0 */6 * * *"  # Every 6 hours
+    maxHistory: 10
   ```
 
 ### Cloudflare R2
 
 ```yaml
 destinations:
-r2:
-bucket: my-r2-bucket
-prefix: db-backups
-endpoint: https://your-account-id.r2.cloudflarestorage.com
-accessKey: ${R2_ACCESS_KEY}
-secretKey: ${R2_SECRET_KEY}
-region: auto
+  r2:
+    bucket: my-r2-bucket
+    prefix: db-backups
+    endpoint: https://your-account-id.r2.cloudflarestorage.com
+    accessKey: ${R2_ACCESS_KEY}
+    secretKey: ${R2_SECRET_KEY}
+    region: auto
 
 backups:
-- url: postgres://postgres:password@db:5432/myapp
-  destination: r2
-  schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
-  maxHistory: 7
+  - url: postgres://postgres:password@db:5432/myapp
+    destination: r2
+    schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+    maxHistory: 7
   ```
 
 ---
@@ -173,10 +173,10 @@ backups:
 
 ```yaml
 destinations:
-prod:
-bucket: ${BACKUP_BUCKET}
-accessKey: ${AWS_ACCESS_KEY_ID}
-secretKey: ${AWS_SECRET_ACCESS_KEY}
+  prod:
+    bucket: ${BACKUP_BUCKET}
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}
 ```
 
 ---
