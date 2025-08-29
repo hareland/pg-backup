@@ -33,6 +33,7 @@ services:
       /bin/sh -c "
       until (/usr/bin/mc alias set local http://minio:9000 minio minio123) do sleep 2; done &&
       /usr/bin/mc mb -p local/testbucket || true &&
+      /usr/bin/mc mb -p local/secondtestbucket || true &&
       tail -f /dev/null
       "
 
@@ -50,6 +51,7 @@ services:
       AWS_ACCESS_KEY_ID: minio
       AWS_SECRET_ACCESS_KEY: minio123
       AWS_DEFAULT_REGION: us-east-1
+#      BACKUP_DESTINATION: second
       TZ: Europe/Copenhagen
     volumes:
       - ./example.yaml:/config.yaml:ro

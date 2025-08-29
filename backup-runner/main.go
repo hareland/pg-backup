@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -32,7 +33,7 @@ type Backup struct {
 	URL         string `yaml:"url"`
 	Destination string `yaml:"destination"`
 	Schedule    string `yaml:"schedule"`
-	MaxHistory  int    `yaml:"maxHistory"` // keep newest N; 0 disables pruning
+	MaxHistory  int    `yaml:"maxHistory"`
 }
 
 type s3Object struct {
@@ -43,25 +44,56 @@ type s3Object struct {
 	StorageClass string    `json:"StorageClass"`
 }
 
-// expand ${VAR}
-func resolveEnv(s string) string {
-	return os.ExpandEnv(s)
+/*
+   Expand env across the entire YAML before parsing.
+   Supports:
+     - $VAR
+     - ${VAR}
+     - ${VAR:-default}   (use default if VAR is unset or empty)
+     - ${VAR-default}    (use default if VAR is unset)
+*/
+var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::(-)?([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)`)
+
+func expandAllEnv(s string) string {
+	return envPattern.ReplaceAllStringFunc(s, func(m string) string {
+		sub := envPattern.FindStringSubmatch(m)
+		// Groups:
+		// 1 = var in ${...}, 2 = "-" if ":-" else "", 3 = default (maybe empty), 4 = var in $VAR
+		varName := sub[1]
+		if varName == "" {
+			varName = sub[4]
+		}
+		if varName == "" {
+			return m
+		}
+		val, ok := os.LookupEnv(varName)
+
+		// Default handling
+		if sub[1] != "" { // ${...} form may include default
+			def := sub[3]
+			hasColonDash := sub[2] == "-" // true means ":-" (unset OR empty)
+			if def != "" {
+				if hasColonDash {
+					if !ok || val == "" {
+						return def
+					}
+				} else {
+					if !ok {
+						return def
+					}
+				}
+			}
+		}
+
+		if !ok {
+			return "" // unset & no default => empty
+		}
+		return val
+	})
 }
 
 func fillDestFromEnv(d *Destination) {
-	if v := resolveEnv(d.Access); v != "" {
-		d.Access = v
-	}
-	if v := resolveEnv(d.Secret); v != "" {
-		d.Secret = v
-	}
-	if v := resolveEnv(d.Endpoint); v != "" {
-		d.Endpoint = v
-	}
-	if v := resolveEnv(d.Region); v != "" {
-		d.Region = v
-	}
-
+	// Values are already expanded; these are fallbacks if still empty.
 	if d.Access == "" {
 		d.Access = os.Getenv("AWS_ACCESS_KEY_ID")
 	}
@@ -150,8 +182,6 @@ func awsDeleteObjects(endpoint, region, access, secret, bucket string, keys []st
 	if len(keys) == 0 {
 		return nil
 	}
-
-	// Delete in batches of 1000 (API limit)
 	for start := 0; start < len(keys); start += 1000 {
 		end := start + 1000
 		if end > len(keys) {
@@ -159,7 +189,6 @@ func awsDeleteObjects(endpoint, region, access, secret, bucket string, keys []st
 		}
 		batch := keys[start:end]
 
-		// Build {"Objects":[{"Key":"..."}, ...]}
 		type delObj struct {
 			Key string `json:"Key"`
 		}
@@ -209,7 +238,6 @@ func pruneHistory(dest Destination, basePrefix string, keep int) {
 		return
 	}
 
-	// Filter to only pgdump files (defensive)
 	filtered := make([]s3Object, 0, len(objs))
 	for _, o := range objs {
 		if strings.HasSuffix(o.Key, ".dump") && strings.HasPrefix(filepath.Base(o.Key), "pgdump-") {
@@ -217,7 +245,6 @@ func pruneHistory(dest Destination, basePrefix string, keep int) {
 		}
 	}
 
-	// Sort newest first by LastModified
 	sort.Slice(filtered, func(i, j int) bool {
 		return filtered[i].LastModified.After(filtered[j].LastModified)
 	})
@@ -246,8 +273,11 @@ func main() {
 		log.Fatalf("read config: %v", err)
 	}
 
+	// Expand env across the entire YAML so all fields support env vars.
+	expanded := expandAllEnv(string(raw))
+
 	var cfg Config
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
 		log.Fatalf("parse config: %v", err)
 	}
 
@@ -274,7 +304,6 @@ func main() {
 			}
 			defer os.Remove(out)
 
-			// db folder name
 			dbname := "all"
 			if i := strings.LastIndex(b.URL, "/"); i >= 0 && i < len(b.URL)-1 {
 				dbname = b.URL[i+1:]
@@ -293,12 +322,10 @@ func main() {
 			}
 			log.Printf("[backup] uploaded s3://%s/%s", dest.Bucket, key)
 
-			// Optional local drop
 			if _, err := os.Stat("/backups"); err == nil {
 				_ = os.Rename(out, filepath.Join("/backups", filepath.Base(out)))
 			}
 
-			// Prune history
 			if b.MaxHistory > 0 {
 				pruneHistory(dest, basePrefix, b.MaxHistory)
 			}
