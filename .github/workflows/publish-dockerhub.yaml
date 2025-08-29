@@ -10,7 +10,7 @@ on:
 env:
   IMAGE: ghcr.io/${{ github.repository }}
   DOCKER_CONTEXT: ./backup-runner
-  DOCKERFILE_PATH: ./backup-runner/Dockerfile
+  DOCKERFILE_PATH: ./Dockerfile
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
