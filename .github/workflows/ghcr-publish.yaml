@@ -2,7 +2,6 @@ name: ghcr-publish
 
 on:
   push:
-    branches: [ main ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
@@ -10,7 +9,7 @@ on:
 env:
   BUILD_CONTEXT: ./backup-runner          # <- renamed from DOCKER_CONTEXT
   DOCKERFILE_PATH: ./backup-runner/Dockerfile
-  PLATFORMS: linux/amd64,linux/arm64
+  PLATFORMS: linux/amd64,linux/arm64,darwin/arm64
 
 jobs:
   build-and-push:
