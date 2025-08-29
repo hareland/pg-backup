@@ -1,16 +1,18 @@
 # pg-backup
 
-A lightweight PostgreSQL backup scheduler that **automagically** creates database dumps and stores them in S3-compatible storage (AWS S3, MinIO, Cloudflare R2, etc.).
+A lightweight PostgreSQL backup scheduler that **automagically** creates database dumps and stores them in S3-compatible
+storage (AWS S3, MinIO, Cloudflare R2, etc.).
 
 ## ✨ Features
 
-- **Cron Scheduling** – define when backups run using familiar cron expressions
-- **S3-Compatible Storage** – works with AWS S3, MinIO, Cloudflare R2, and others
-- **Custom Dump Format** – uses `pg_dump -Fc` for compressed, efficient backups and restores
-- **Retention Policy** – optional `maxHistory` to keep only the latest *N* backups per database
-- **Environment Variable Expansion** – `${VAR}`, `$VAR`, `${VAR:-default}`, `${VAR-default}` placeholders expand everywhere in YAML
-- **Docker Ready** – run as a container with a simple YAML config
-- **Multiple Databases** – back up many databases to different destinations with one config
+- **Cron Scheduling** - define when backups run using familiar cron expressions
+- **S3-Compatible Storage** - works with AWS S3, MinIO, Cloudflare R2, and others
+- **Custom Dump Format** - uses `pg_dump -Fc` for compressed, efficient backups and restores
+- **Retention Policy** - optional `maxHistory` to keep only the latest *N* backups per database
+- **Environment Variable Expansion** - `${VAR}`, `$VAR`, `${VAR:-default}`, `${VAR-default}` placeholders expand
+  everywhere in YAML
+- **Docker Ready** - run as a container with a simple YAML config
+- **Multiple Databases** - back up many databases to different destinations with one config
 
 ---
 
@@ -39,17 +41,17 @@ backups:
 
 ```yaml
 services:
-    pg-backup:
-        image: ghcr.io/hareland/pg-backup:latest
-        restart: unless-stopped
-        volumes:
-          - ./config.yaml:/config.yaml:ro
-        environment:
-          S3_BUCKET: my-backup-bucket
-          PG_URL: postgres://postgres:password@db:5432/mydb
-          AWS_ACCESS_KEY_ID: your-access-key
-          AWS_SECRET_ACCESS_KEY: your-secret-key
-          TZ: Europe/Copenhagen
+  pg-backup:
+    image: ghcr.io/hareland/pg-backup:latest
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+    environment:
+      S3_BUCKET: my-backup-bucket
+      PG_URL: postgres://postgres:password@db:5432/mydb
+      AWS_ACCESS_KEY_ID: your-access-key
+      AWS_SECRET_ACCESS_KEY: your-secret-key
+      TZ: Europe/Copenhagen
 ```
 
 ```bash
@@ -105,56 +107,56 @@ backups:
 
 ```yaml
 destinations:
-    aws:
-        bucket: ${AWS_BUCKET}
-        prefix: database-backups
-        region: us-east-1
-        accessKey: ${AWS_ACCESS_KEY_ID}
-        secretKey: ${AWS_SECRET_ACCESS_KEY}
+  aws:
+    bucket: ${AWS_BUCKET}
+    prefix: database-backups
+    region: us-east-1
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}
 
 backups:
-- url: postgres://user:pass@db.example.com:5432/production
-  destination: aws
-  schedule: "0 3 * * *"  # Daily at 3 AM
-  maxHistory: 14
+  - url: postgres://user:pass@db.example.com:5432/production
+    destination: aws
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    maxHistory: 14
   ```
 
 ### MinIO
 
 ```yaml
 destinations:
-    minio:
-        bucket: backups
-        prefix: postgres
-        endpoint: http://minio:9000
-        accessKey: minio
-        secretKey: minio123
-        region: us-east-1
+  minio:
+    bucket: backups
+    prefix: postgres
+    endpoint: http://minio:9000
+    accessKey: minio
+    secretKey: minio123
+    region: us-east-1
 
 backups:
-- url: postgres://postgres:postgres@postgres:5432/app
-  destination: minio
-  schedule: "0 */6 * * *"  # Every 6 hours
-  maxHistory: 10
+  - url: postgres://postgres:postgres@postgres:5432/app
+    destination: minio
+    schedule: "0 */6 * * *"  # Every 6 hours
+    maxHistory: 10
   ```
 
 ### Cloudflare R2
 
 ```yaml
 destinations:
-    r2:
-      bucket: my-r2-bucket
-      prefix: db-backups
-      endpoint: https://your-account-id.r2.cloudflarestorage.com
-      accessKey: ${R2_ACCESS_KEY}
-      secretKey: ${R2_SECRET_KEY}
-      region: auto
+  r2:
+    bucket: my-r2-bucket
+    prefix: db-backups
+    endpoint: https://your-account-id.r2.cloudflarestorage.com
+    accessKey: ${R2_ACCESS_KEY}
+    secretKey: ${R2_SECRET_KEY}
+    region: auto
 
 backups:
-- url: postgres://postgres:password@db:5432/myapp
-  destination: r2
-  schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
-  maxHistory: 7
+  - url: postgres://postgres:password@db:5432/myapp
+    destination: r2
+    schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+    maxHistory: 7
   ```
 
 ---
@@ -163,8 +165,8 @@ backups:
 
 ### Core
 
-- `CONFIG_FILE` – path to config file (default: `/config.yaml`)
-- `TZ` – timezone for cron schedule (e.g. `Europe/Copenhagen`)
+- `CONFIG_FILE` - path to config file (default: `/config.yaml`)
+- `TZ` - timezone for cron schedule (e.g. `Europe/Copenhagen`)
 
 ### AWS/S3 Fallbacks
 
@@ -225,10 +227,10 @@ maxHistory: ${PG_KEEP:-5}
 
 ```yaml
 destinations:
-    s3:
-        bucket: ${S3_BUCKET:-default-bucket}
-        region: ${AWS_DEFAULT_REGION:-us-east-1}
-        prefix: ${BACKUP_PREFIX-backups}
+  s3:
+    bucket: ${S3_BUCKET:-default-bucket}
+    region: ${AWS_DEFAULT_REGION:-us-east-1}
+    prefix: ${BACKUP_PREFIX-backups}
 ```
 
 ---
@@ -337,10 +339,10 @@ go build -o pg-backup .
 
 ## 🛠 Troubleshooting
 
-- **Timeouts** – increase `PGCONNECT_TIMEOUT`
-- **Permission denied** – check DB user rights
-- **Upload fails** – verify credentials/bucket/endpoint
-- **Cron not firing** – check timezone + syntax
+- **Timeouts** - increase `PGCONNECT_TIMEOUT`
+- **Permission denied** - check DB user rights
+- **Upload fails** - verify credentials/bucket/endpoint
+- **Cron not firing** - check timezone + syntax
 
 Debug tips:
 
