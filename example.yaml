@@ -11,4 +11,5 @@ destinations:
 backups:
   - url: postgres://postgres:postgres@postgres:5432/app
     destination: main
-    schedule: "*/2 * * * *"   # every 2 minutes for testing
+    schedule: "* * * * *"   # every minute for testing
+    maxHistory: 2

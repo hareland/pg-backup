@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,7 +22,7 @@ type Config struct {
 type Destination struct {
 	Bucket   string `yaml:"bucket"`
 	Prefix   string `yaml:"prefix"`
-	Endpoint string `yaml:"endpoint"` // e.g. http://minio:9000 or https://<r2acct>.r2.cloudflarestorage.com
+	Endpoint string `yaml:"endpoint"`
 	Access   string `yaml:"accessKey"`
 	Secret   string `yaml:"secretKey"`
 	Region   string `yaml:"region"`
@@ -30,14 +32,22 @@ type Backup struct {
 	URL         string `yaml:"url"`
 	Destination string `yaml:"destination"`
 	Schedule    string `yaml:"schedule"`
+	MaxHistory  int    `yaml:"maxHistory"` // keep newest N; 0 disables pruning
 }
 
-// expand ${VAR} style strings
+type s3Object struct {
+	Key          string    `json:"Key"`
+	LastModified time.Time `json:"LastModified"`
+	Size         int64     `json:"Size"`
+	ETag         string    `json:"ETag"`
+	StorageClass string    `json:"StorageClass"`
+}
+
+// expand ${VAR}
 func resolveEnv(s string) string {
 	return os.ExpandEnv(s)
 }
 
-// fill missing fields from env
 func fillDestFromEnv(d *Destination) {
 	if v := resolveEnv(d.Access); v != "" {
 		d.Access = v
@@ -76,15 +86,7 @@ func runPgDump(url string) (string, error) {
 	return out, cmd.Run()
 }
 
-func awsCp(endpoint, region, access, secret, bucket, key, file string) error {
-	args := []string{"s3", "cp", file, "s3://" + bucket + "/" + strings.TrimLeft(key, "/")}
-	if endpoint != "" {
-		args = append(args, "--endpoint-url", endpoint)
-	}
-	if region != "" {
-		args = append(args, "--region", region)
-	}
-	cmd := exec.Command("aws", args...)
+func awsEnv(endpoint, region, access, secret string) []string {
 	env := os.Environ()
 	if access != "" {
 		env = append(env, "AWS_ACCESS_KEY_ID="+access)
@@ -98,10 +100,140 @@ func awsCp(endpoint, region, access, secret, bucket, key, file string) error {
 	if endpoint != "" {
 		env = append(env, "AWS_ENDPOINT_URL="+endpoint)
 	}
-	cmd.Env = env
+	return env
+}
+
+func awsCp(endpoint, region, access, secret, bucket, key, file string) error {
+	args := []string{"s3", "cp", file, "s3://" + bucket + "/" + strings.TrimLeft(key, "/")}
+	if endpoint != "" {
+		args = append(args, "--endpoint-url", endpoint)
+	}
+	if region != "" {
+		args = append(args, "--region", region)
+	}
+	cmd := exec.Command("aws", args...)
+	cmd.Env = awsEnv(endpoint, region, access, secret)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func awsListObjects(endpoint, region, access, secret, bucket, prefix string) ([]s3Object, error) {
+	args := []string{
+		"s3api", "list-objects-v2",
+		"--bucket", bucket,
+		"--prefix", strings.TrimLeft(prefix, "/"),
+		"--output", "json",
+	}
+	if endpoint != "" {
+		args = append(args, "--endpoint-url", endpoint)
+	}
+	if region != "" {
+		args = append(args, "--region", region)
+	}
+	cmd := exec.Command("aws", args...)
+	cmd.Env = awsEnv(endpoint, region, access, secret)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Contents []s3Object `json:"Contents"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Contents, nil
+}
+
+func awsDeleteObjects(endpoint, region, access, secret, bucket string, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	// Delete in batches of 1000 (API limit)
+	for start := 0; start < len(keys); start += 1000 {
+		end := start + 1000
+		if end > len(keys) {
+			end = len(keys)
+		}
+		batch := keys[start:end]
+
+		// Build {"Objects":[{"Key":"..."}, ...]}
+		type delObj struct {
+			Key string `json:"Key"`
+		}
+		body, _ := json.Marshal(struct {
+			Objects []delObj `json:"Objects"`
+			Quiet   bool     `json:"Quiet"`
+		}{
+			Objects: func() []delObj {
+				out := make([]delObj, len(batch))
+				for i, k := range batch {
+					out[i] = delObj{Key: k}
+				}
+				return out
+			}(),
+			Quiet: true,
+		})
+
+		args := []string{
+			"s3api", "delete-objects",
+			"--bucket", bucket,
+			"--delete", string(body),
+		}
+		if endpoint != "" {
+			args = append(args, "--endpoint-url", endpoint)
+		}
+		if region != "" {
+			args = append(args, "--region", region)
+		}
+		cmd := exec.Command("aws", args...)
+		cmd.Env = awsEnv(endpoint, region, access, secret)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func pruneHistory(dest Destination, basePrefix string, keep int) {
+	if keep <= 0 {
+		return
+	}
+	objs, err := awsListObjects(dest.Endpoint, dest.Region, dest.Access, dest.Secret, dest.Bucket, basePrefix)
+	if err != nil {
+		log.Printf("[prune] list failed for s3://%s/%s: %v", dest.Bucket, basePrefix, err)
+		return
+	}
+
+	// Filter to only pgdump files (defensive)
+	filtered := make([]s3Object, 0, len(objs))
+	for _, o := range objs {
+		if strings.HasSuffix(o.Key, ".dump") && strings.HasPrefix(filepath.Base(o.Key), "pgdump-") {
+			filtered = append(filtered, o)
+		}
+	}
+
+	// Sort newest first by LastModified
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].LastModified.After(filtered[j].LastModified)
+	})
+
+	if len(filtered) <= keep {
+		return
+	}
+
+	toDelete := make([]string, 0, len(filtered)-keep)
+	for _, o := range filtered[keep:] {
+		toDelete = append(toDelete, o.Key)
+	}
+	log.Printf("[prune] deleting %d old backups under s3://%s/%s", len(toDelete), dest.Bucket, basePrefix)
+	if err := awsDeleteObjects(dest.Endpoint, dest.Region, dest.Access, dest.Secret, dest.Bucket, toDelete); err != nil {
+		log.Printf("[prune] delete failed: %v", err)
+	}
 }
 
 func main() {
@@ -119,7 +251,6 @@ func main() {
 		log.Fatalf("parse config: %v", err)
 	}
 
-	// resolve env placeholders and fallbacks
 	for k, d := range cfg.Destinations {
 		fillDestFromEnv(&d)
 		cfg.Destinations[k] = d
@@ -143,7 +274,7 @@ func main() {
 			}
 			defer os.Remove(out)
 
-			ts := time.Now().UTC().Format("20060102T150405Z")
+			// db folder name
 			dbname := "all"
 			if i := strings.LastIndex(b.URL, "/"); i >= 0 && i < len(b.URL)-1 {
 				dbname = b.URL[i+1:]
@@ -151,7 +282,10 @@ func main() {
 					dbname = strings.SplitN(dbname, "?", 2)[0]
 				}
 			}
-			key := filepath.Join(strings.Trim(dest.Prefix, "/"), dbname, "pgdump-"+ts+".dump")
+			basePrefix := filepath.Join(strings.Trim(dest.Prefix, "/"), dbname) + "/"
+
+			ts := time.Now().UTC().Format("20060102T150405Z")
+			key := basePrefix + "pgdump-" + ts + ".dump"
 
 			if err := awsCp(dest.Endpoint, dest.Region, dest.Access, dest.Secret, dest.Bucket, key, out); err != nil {
 				log.Printf("[backup] upload failed: %v", err)
@@ -159,8 +293,14 @@ func main() {
 			}
 			log.Printf("[backup] uploaded s3://%s/%s", dest.Bucket, key)
 
+			// Optional local drop
 			if _, err := os.Stat("/backups"); err == nil {
 				_ = os.Rename(out, filepath.Join("/backups", filepath.Base(out)))
+			}
+
+			// Prune history
+			if b.MaxHistory > 0 {
+				pruneHistory(dest, basePrefix, b.MaxHistory)
 			}
 		})
 		if err != nil {
