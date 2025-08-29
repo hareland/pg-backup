@@ -8,9 +8,8 @@ on:
     branches: [ main ]
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}
-  DOCKER_CONTEXT: ./backup-runner
-  DOCKERFILE_PATH: ./Dockerfile
+  BUILD_CONTEXT: ./backup-runner          # <- renamed from DOCKER_CONTEXT
+  DOCKERFILE_PATH: ./backup-runner/Dockerfile
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
@@ -22,6 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute image name (lowercase)
+        id: img
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -32,10 +35,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: ${{ steps.img.outputs.image }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            # Keep the repo tag as-is (e.g. v1.2.3)
             type=ref,event=tag
 
       - name: Log in to GHCR
@@ -50,7 +52,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
-          context: ${{ env.DOCKER_CONTEXT }}
+          context: ${{ env.BUILD_CONTEXT }}
           file: ${{ env.DOCKERFILE_PATH }}
           platforms: ${{ env.PLATFORMS }}
           push: false
@@ -63,7 +65,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
-          context: ${{ env.DOCKER_CONTEXT }}
+          context: ${{ env.BUILD_CONTEXT }}
           file: ${{ env.DOCKERFILE_PATH }}
           platforms: ${{ env.PLATFORMS }}
           push: true
