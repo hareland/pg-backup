@@ -1,320 +1,313 @@
 # pg-backup
 
-A lightweight PostgreSQL backup scheduler that automatically creates database backups and uploads them to S3-compatible storage (AWS S3, MinIO, Cloudflare R2, etc.).
+A lightweight PostgreSQL backup scheduler that **automagically** creates database dumps and stores them in S3-compatible storage (AWS S3, MinIO, Cloudflare R2, etc.).
 
-## Features
+## ✨ Features
 
-- **Scheduled Backups**: Use cron expressions to schedule automatic backups
-- **S3-Compatible Storage**: Supports AWS S3, MinIO, Cloudflare R2, and other S3-compatible services
-- **Custom Format**: Creates PostgreSQL custom format dumps (`pg_dump -Fc`) for efficient compression and restore
-- **Environment Variable Support**: Flexible configuration with environment variable substitution
-- **Docker Ready**: Available as a pre-built Docker image
-- **Multiple Databases**: Support for backing up multiple databases to different destinations
+- **Cron Scheduling** – define when backups run using familiar cron expressions
+- **S3-Compatible Storage** – works with AWS S3, MinIO, Cloudflare R2, and others
+- **Custom Dump Format** – uses `pg_dump -Fc` for compressed, efficient backups and restores
+- **Retention Policy** – optional `maxHistory` to keep only the latest *N* backups per database
+- **Environment Variable Substitution** – `${VAR}` placeholders expand from environment variables
+- **Docker Ready** – run as a container with a simple YAML config
+- **Multiple Databases** – back up many databases to different destinations with one config
 
-## Quick Start
+---
 
-### Using Docker Compose
+## 🚀 Quick Start
 
-Create a `config.yaml` file:
+### 1. Create `config.yaml`
 
 ```yaml
 destinations:
-  s3:
-    bucket: my-backup-bucket
-    prefix: postgres-backups
-    endpoint: https://s3.amazonaws.com
-    accessKey: ${AWS_ACCESS_KEY_ID}
-    secretKey: ${AWS_SECRET_ACCESS_KEY}
-    region: us-east-1
+s3:
+bucket: my-backup-bucket
+prefix: postgres-backups
+endpoint: https://s3.amazonaws.com
+accessKey: ${AWS_ACCESS_KEY_ID}
+secretKey: ${AWS_SECRET_ACCESS_KEY}
+region: us-east-1
 
 backups:
-  - url: postgres://postgres:password@localhost:5432/mydb
-    destination: s3
-    schedule: "0 2 * * *"  # Daily at 2 AM
-```
+- url: postgres://postgres:password@localhost:5432/mydb
+  destination: s3
+  schedule: "0 2 * * *"   # Daily at 2 AM
+  maxHistory: 7           # Keep last 7 backups
+  ```
 
-Create a `docker-compose.yml` file:
+### 2. Docker Compose
 
 ```yaml
 services:
-  pg-backup:
-    image: ghcr.io/hareland/pg-backup:latest
-    volumes:
-      - ./config.yaml:/config.yaml:ro
-    environment:
-      AWS_ACCESS_KEY_ID: your-access-key
-      AWS_SECRET_ACCESS_KEY: your-secret-key
-      TZ: Europe/Copenhagen
-    restart: unless-stopped
+pg-backup:
+image: ghcr.io/hareland/pg-backup:latest
+volumes:
+- ./config.yaml:/config.yaml:ro
+environment:
+AWS_ACCESS_KEY_ID: your-access-key
+AWS_SECRET_ACCESS_KEY: your-secret-key
+TZ: Europe/Copenhagen
+restart: unless-stopped
 ```
-
-Start the service:
 
 ```bash
 docker-compose up -d
 ```
 
-### Using Docker Run
+### 3. Docker Run
 
 ```bash
 docker run -d \
-  --name pg-backup \
-  -v $(pwd)/config.yaml:/config.yaml:ro \
-  -e AWS_ACCESS_KEY_ID=your-access-key \
-  -e AWS_SECRET_ACCESS_KEY=your-secret-key \
-  -e TZ=Europe/Copenhagen \
-  --restart unless-stopped \
-  ghcr.io/hareland/pg-backup:latest
+--name pg-backup \
+-v $(pwd)/config.yaml:/config.yaml:ro \
+-e AWS_ACCESS_KEY_ID=your-access-key \
+-e AWS_SECRET_ACCESS_KEY=your-secret-key \
+-e TZ=Europe/Copenhagen \
+--restart unless-stopped \
+ghcr.io/hareland/pg-backup:latest
 ```
 
-## Configuration
+---
 
-The application is configured using a YAML file (default: `/config.yaml`). You can override the config file location using the `CONFIG_FILE` environment variable.
+## ⚙️ Configuration
 
-### Configuration Structure
+- Default config file: `/config.yaml`
+- Override with: `CONFIG_FILE=/path/to/config.yaml`
+
+### Schema
 
 ```yaml
 destinations:
-  destination_name:
-    bucket: string        # S3 bucket name
-    prefix: string        # Optional prefix for backup files
-    endpoint: string      # S3 endpoint URL (optional for AWS S3)
-    accessKey: string     # S3 access key
-    secretKey: string     # S3 secret key
-    region: string        # S3 region
+name:
+bucket: string
+prefix: string        # optional
+endpoint: string      # optional for AWS
+accessKey: string
+secretKey: string
+region: string
 
 backups:
-  - url: string          # PostgreSQL connection URL
-    destination: string  # Reference to destination name
-    schedule: string     # Cron expression for backup schedule
-```
+- url: string
+  destination: string   # reference to a destination
+  schedule: string      # cron expression
+  maxHistory: int       # keep latest N backups (optional)
+  ```
 
-### Example Configurations
+---
 
-#### AWS S3
+## 🔑 Example Configs
+
+### AWS S3
 
 ```yaml
 destinations:
-  aws:
-    bucket: my-backup-bucket
-    prefix: database-backups
-    region: us-east-1
-    accessKey: ${AWS_ACCESS_KEY_ID}
-    secretKey: ${AWS_SECRET_ACCESS_KEY}
+aws:
+bucket: my-backup-bucket
+prefix: database-backups
+region: us-east-1
+accessKey: ${AWS_ACCESS_KEY_ID}
+secretKey: ${AWS_SECRET_ACCESS_KEY}
 
 backups:
-  - url: postgres://user:pass@db.example.com:5432/production
-    destination: aws
-    schedule: "0 3 * * *"  # Daily at 3 AM
-```
+- url: postgres://user:pass@db.example.com:5432/production
+  destination: aws
+  schedule: "0 3 * * *"  # Daily at 3 AM
+  maxHistory: 14
+  ```
 
-#### MinIO
+### MinIO
 
 ```yaml
 destinations:
-  minio:
-    bucket: backups
-    prefix: postgres
-    endpoint: http://minio:9000
-    accessKey: minio
-    secretKey: minio123
-    region: us-east-1
+minio:
+bucket: backups
+prefix: postgres
+endpoint: http://minio:9000
+accessKey: minio
+secretKey: minio123
+region: us-east-1
 
 backups:
-  - url: postgres://postgres:postgres@postgres:5432/app
-    destination: minio
-    schedule: "0 */6 * * *"  # Every 6 hours
-```
+- url: postgres://postgres:postgres@postgres:5432/app
+  destination: minio
+  schedule: "0 */6 * * *"  # Every 6 hours
+  maxHistory: 10
+  ```
 
-#### Cloudflare R2
+### Cloudflare R2
 
 ```yaml
 destinations:
-  r2:
-    bucket: my-r2-bucket
-    prefix: db-backups
-    endpoint: https://your-account-id.r2.cloudflarestorage.com
-    accessKey: ${R2_ACCESS_KEY}
-    secretKey: ${R2_SECRET_KEY}
-    region: auto
+r2:
+bucket: my-r2-bucket
+prefix: db-backups
+endpoint: https://your-account-id.r2.cloudflarestorage.com
+accessKey: ${R2_ACCESS_KEY}
+secretKey: ${R2_SECRET_KEY}
+region: auto
 
 backups:
-  - url: postgres://postgres:password@db:5432/myapp
-    destination: r2
-    schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
-```
+- url: postgres://postgres:password@db:5432/myapp
+  destination: r2
+  schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+  maxHistory: 7
+  ```
 
-## Environment Variables
+---
 
-### Configuration
+## 🌍 Environment Variables
 
-- `CONFIG_FILE`: Path to configuration file (default: `/config.yaml`)
-- `TZ`: Timezone for scheduling (e.g., `Europe/Copenhagen`)
+### Core
 
-### AWS/S3 Credentials
+- `CONFIG_FILE` – path to config file (default: `/config.yaml`)
+- `TZ` – timezone for cron schedule (e.g. `Europe/Copenhagen`)
 
-These environment variables can be used as fallbacks when not specified in the destination configuration:
+### AWS/S3 Fallbacks
 
-- `AWS_ACCESS_KEY_ID`: S3 access key
-- `AWS_SECRET_ACCESS_KEY`: S3 secret key
-- `AWS_DEFAULT_REGION`: S3 region
-- `AWS_ENDPOINT_URL`: S3 endpoint URL
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_DEFAULT_REGION`
+- `AWS_ENDPOINT_URL`
 
-### Environment Variable Substitution
-
-You can use `${VARIABLE_NAME}` syntax in your configuration file to substitute environment variables:
+### Substitution Example
 
 ```yaml
 destinations:
-  prod:
-    bucket: ${BACKUP_BUCKET}
-    accessKey: ${AWS_ACCESS_KEY_ID}
-    secretKey: ${AWS_SECRET_ACCESS_KEY}
+prod:
+bucket: ${BACKUP_BUCKET}
+accessKey: ${AWS_ACCESS_KEY_ID}
+secretKey: ${AWS_SECRET_ACCESS_KEY}
 ```
 
-## Cron Schedule Format
+---
 
-The application uses extended cron syntax supporting:
+## ⏰ Cron Syntax
 
-- **Standard 5-field**: `minute hour day month weekday`
-- **6-field with seconds**: `second minute hour day month weekday`
-- **Descriptive**: `@yearly`, `@monthly`, `@weekly`, `@daily`, `@hourly`
+Supports:
 
-### Schedule Examples
+- 5-field (`minute hour day month weekday`)
+- 6-field (with seconds)
+- Descriptive (`@daily`, `@weekly`, etc.)
 
 ```yaml
-# Every 30 minutes
-schedule: "*/30 * * * *"
-
-# Daily at 2:30 AM
-schedule: "30 2 * * *"
-
-# Every Sunday at 3:15 AM
-schedule: "15 3 * * 0"
-
-# Every 6 hours
-schedule: "0 */6 * * *"
-
-# Monthly on the 1st at midnight
-schedule: "0 0 1 * *"
-
-# Using descriptive syntax
+schedule: "*/30 * * * *"   # every 30 min
+schedule: "30 2 * * *"     # daily at 2:30
+schedule: "15 3 * * 0"     # Sundays 3:15
 schedule: "@daily"
-schedule: "@weekly"
 ```
 
-## Backup File Format
+---
 
-Backups are created using PostgreSQL's custom format (`pg_dump -Fc`) and stored with the following naming convention:
+## 📦 Backup File Format
 
 ```
-s3://bucket/prefix/database_name/pgdump-YYYYMMDDTHHMMSSZ.dump
+s3://bucket/prefix/database/pgdump-YYYYMMDDTHHMMSSZ.dump
 ```
 
 Example:
+
 ```
 s3://my-backups/postgres/myapp/pgdump-20231225T030000Z.dump
 ```
 
-## Docker Image
+---
 
-The application is available as a pre-built Docker image:
+## 🔄 Restore
+
+You can restore any backup using `aws s3 cp` (or your S3-compatible CLI) together with `pg_restore`.
+
+### Steps
+
+1. Copy the backup file locally:
+
+```bash
+aws s3 cp s3://my-backup-bucket/postgres/mydb/pgdump-20231225T030000Z.dump ./backup.dump
+```
+
+2. Restore into a database (must exist beforehand):
+
+```bash
+createdb -h localhost -U postgres mydb_restored
+pg_restore -h localhost -U postgres -d mydb_restored ./backup.dump
+```
+
+3. Or overwrite an existing database (careful: destructive):
+
+```bash
+pg_restore -h localhost -U postgres -d mydb --clean --if-exists ./backup.dump
+```
+
+---
+
+## 🐳 Docker Image
 
 ```
 ghcr.io/hareland/pg-backup:latest
 ```
 
-### Image Details
+- Alpine base, PostgreSQL client + AWS CLI
+- Multi-arch (amd64, arm64)
+- Optimized, minimal footprint
 
-- **Base**: Alpine Linux with PostgreSQL client tools and AWS CLI
-- **Architecture**: Multi-platform (amd64, arm64)
-- **Size**: Optimized for minimal footprint
-- **Updates**: Automatically built from the main branch
+---
 
-## Development and Testing
+## 🧪 Development & Testing
 
-### Local Testing with MinIO
-
-Use the provided test setup to run the application locally with MinIO:
+Local testing with MinIO:
 
 ```bash
-# Start the test environment
 docker-compose -f compose.test.yaml up -d
-
-# View logs
 docker-compose -f compose.test.yaml logs -f pg-backup
-
-# Stop the test environment
 docker-compose -f compose.test.yaml down -v
 ```
 
-This will start:
-- PostgreSQL database with test data
-- MinIO S3-compatible storage
-- pg-backup configured to backup every 2 minutes
-
-### Building from Source
+Build from source:
 
 ```bash
-# Clone the repository
 git clone https://github.com/hareland/pg-backup.git
 cd pg-backup
-
-# Build the Docker image
 docker build -t pg-backup ./backup-runner
 
-# Or build locally (requires Go 1.21+)
+# Or with Go 1.21+
 cd backup-runner
 go build -o pg-backup .
 ```
 
-## Monitoring and Logs
+---
 
-The application provides structured logging for monitoring backup operations:
+## 📊 Logs
 
 ```
-[backup] start postgres://user:***@host:5432/database
-[backup] uploaded s3://bucket/prefix/database/pgdump-20231225T030000Z.dump
+[backup] start postgres://user:***@host:5432/db
+[backup] uploaded s3://bucket/prefix/db/pgdump-20231225T030000Z.dump
+[prune] deleting 3 old backups under s3://bucket/prefix/db/
 ```
 
-### Log Levels
+---
 
-- **Info**: Successful backup operations and scheduling events
-- **Error**: Failed backup operations, connection issues, or configuration errors
+## 🛠 Troubleshooting
 
-## Troubleshooting
+- **Timeouts** – increase `PGCONNECT_TIMEOUT`
+- **Permission denied** – check DB user rights
+- **Upload fails** – verify credentials/bucket/endpoint
+- **Cron not firing** – check timezone + syntax
 
-### Common Issues
+Debug tips:
 
-1. **Connection timeout**: Adjust `PGCONNECT_TIMEOUT` environment variable (default: 10 seconds)
-2. **Permission denied**: Ensure the database user has sufficient privileges
-3. **S3 upload fails**: Verify credentials, bucket permissions, and network connectivity
-4. **Schedule not triggering**: Check cron syntax and timezone settings
+```bash
+docker run --rm ghcr.io/hareland/pg-backup:latest pg_dump --version
+docker run --rm -v $(pwd)/config.yaml:/config.yaml:ro ghcr.io/hareland/pg-backup:latest cat /config.yaml
+docker logs pg-backup
+```
 
-### Debug Steps
+---
 
-1. **Test database connection**:
-   ```bash
-   docker run --rm ghcr.io/hareland/pg-backup:latest \
-     pg_dump --version
-   ```
+## 🤝 Contributing
 
-2. **Validate configuration**:
-   ```bash
-   docker run --rm -v $(pwd)/config.yaml:/config.yaml:ro \
-     ghcr.io/hareland/pg-backup:latest \
-     cat /config.yaml
-   ```
+Issues, PRs, and feature requests welcome!
 
-3. **Check logs**:
-   ```bash
-   docker logs pg-backup-container
-   ```
+---
 
-## Contributing
+## 📄 License
 
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
-
-## License
-
-This project is open source and available under the MIT License.
+MIT
