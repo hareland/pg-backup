@@ -55,7 +55,6 @@ services:
       TZ: Europe/Copenhagen
     volumes:
       - ./example.yaml:/config.yaml:ro
-      - ./backups:/backups
     restart: unless-stopped
 
 volumes:
